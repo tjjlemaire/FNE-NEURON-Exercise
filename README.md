@@ -155,5 +155,3 @@ To complete the exercise, you're going to need to compile a specific set of equa
 - Run the *nrnivmodl* executable:
 
 ```nrnivmodl```
-
-# FNE-NEURON-Exercise
