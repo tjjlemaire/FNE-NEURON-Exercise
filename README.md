@@ -113,7 +113,7 @@ $ <path/to/python/executable> setup.py install
 
 ## Use *NEURON* from Python
 
-Run Python 3.x from the terminal and check that you can properly import *NEURON*:
+Run Python 3.x from the anaconda prompt and check that you can properly import *NEURON*:
 
 ```
 $ python
@@ -155,3 +155,29 @@ To complete the exercise, you're going to need to compile a specific set of equa
 - Run the *nrnivmodl* executable:
 
 ```nrnivmodl```
+
+
+## Install the exercise package
+
+In order to execute the exercise scripts, you first need to install the exercise package:
+
+- Open the anaconda prompt and move to the exercise root directory containing the `setup.py` file:
+
+```cd <path_to_NEURON_exercise>```
+
+- Install the exercise package and all its dependencies with pip:
+
+```pip install -e .```
+
+
+##  Run the scripts
+
+- Move to the *scripts* subfolder:
+
+```cd scripts```
+
+- Now, to run a script, just type:
+
+```python <partX.py>```
+
+If command line arguments are needed, a help will appear in the anaconda prompt.
