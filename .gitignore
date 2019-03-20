@@ -1,4 +1,5 @@
 scripts/part1_solution.py
+*.pdf
 
 # Sphinx tools and doc
 _build/
