@@ -1,6 +1,7 @@
 import platform
 import os
 from neuron import h
+from neuron import load_mechanisms as load_mechanisms_native
 
 
 nrn_dll_loaded = []
@@ -20,21 +21,27 @@ def load_mechanisms(path, mechname=None):
         in source file.
     '''
 
-    global nrn_dll_loaded
+    # Get OS
+    OS = platform.system()
 
-    # If mechanisms of input path are already loaded, return silently
-    if path in nrn_dll_loaded:
-        return
+    # If Darwin, call native NEURON function and return
+    if OS == 'Darwin':
+        return load_mechanisms_native(path)
 
-    # Get platform-dependent path to compiled library file
-    if platform.system() == 'Windows':
+    # Otherwise, get platform-dependent path to compiled library file
+    if OS == 'Windows':
         lib_path = os.path.join(path, 'nrnmech.dll')
-    elif platform.system() == 'Linux':
+    elif OS == 'Linux':
         lib_path = os.path.join(path, platform.machine(), '.libs', 'libnrnmech.so')
     else:
         raise OSError('Mechanisms loading on "{}" currently not handled.'.format(platform.system()))
     if not os.path.isfile(lib_path):
         raise RuntimeError('Compiled library file not found for mechanisms in "{}"'.format(path))
+
+    # If mechanisms of input path are already loaded, return silently
+    global nrn_dll_loaded
+    if path in nrn_dll_loaded:
+        return
 
     # If mechanism name is provided, check for untracked changes in source file
     if mechname is not None:
