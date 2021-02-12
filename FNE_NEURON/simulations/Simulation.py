@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# @Author: Theo Lemaire
+# @Email: theo.lemaire@epfl.ch
+# @Date:   2019-06-05 14:08:31
+# @Last Modified by:   Theo Lemaire
+# @Last Modified time: 2020-03-23 16:11:08
+
 import os
 import time
 from neuron import h
@@ -10,117 +17,37 @@ class Simulation:
         can be executed in parallel using MPI.
     """
 
-    def __init__(self):
-        """ Object initialization.
-        """
-
-        # Set the temperature in Neuron
-        h.celsius = 37
-        # Set the Neuron integration dt in ms
-        h.dt = 0.025
-
-        # variables to set in child clasess
-        self.__tstop = None
-        self.__integrationStep = None
-
-        self.simulationTime = None
-        self.__printPeriod = 250  # ms
+    def __init__(self, tstop):
+        """ Object initialization. """
+        # Simulation parameters
+        h.celsius = 36.  # Celsius
+        h.dt = 0.01  # 0.025 (ms)
+        self._tstop = tstop  # ms
 
         self._resultsFolder = "results/"
         if not os.path.exists(self._resultsFolder):
             os.makedirs(self._resultsFolder)
 
-    def __check_parameters(self):
-        """ Check whether some parameters necessary for the simulation have been set or not. """
-        if self.__tstop is None or self.__integrationStep is None:
-            raise Exception("Undefined integration step and maximum time of simulation")
-
-    def _get_tstop(self):
-        """ Return the time at which we want to stop the simulation. """
-        return self.__tstop
-
-    def _set_tstop(self, tstop):
-        """ Set the time at which we want to stop the simulation.
-
-        Keyword arguments:
-        tstop -- time at which we want to stop the simulation in ms.
-        """
-        if tstop > 0:
-            self.__tstop = tstop
-        else:
-            raise Exception("The maximum time of simulation has to be greater than 0")
-
-    def _get_integration_step(self):
-        """ Return the integration time step. """
-        return self.__integrationStep
-
-    def _set_integration_step(self, dt):
-        """ Set the integration time step.
-
-        Keyword arguments:
-        dt -- integration time step in ms.
-        """
-        if dt > 0:
-            self.__integrationStep = dt
-        else:
-            raise Exception("The integration step has to be greater than 0")
-
-    def _initialize(self):
-        """ Initialize the simulation.
-        """
-        h.finitialize(-80)
-        self._start = time.time()
-        self.__tPrintInfo = 0
-
-    def _integrate(self):
-        """ Integrate the neuronal cells for a defined integration time step ."""
-        h.fadvance(h.t + self.__integrationStep)
-
-    def _update(self):
-        """ Update simulation parameters. """
-        raise Exception("pure virtual function")
-
-    def _get_print_period(self):
-        """ Return the period of time between printings to screen. """
-        return self.__printPeriod
-
-    def _set_print_period(self, t):
-        """ Set the period of time between printings to screen.
-
-        Keyword arguments:
-        t -- period of time between printings in ms.
-        """
-        if t > 0:
-            self.__printPeriod = t
-        else:
-            raise Exception("The print period has to be greater than 0")
-
-    def _print_sim_status(self):
-        """ Print to screen the simulation state. """
-        if h.t - self.__tPrintInfo >= (self.__printPeriod - 0.5 * self.__integrationStep):
-            if self.__tPrintInfo == 0:
-                print("\nStarting simulation:")
-            self.__tPrintInfo = h.t
-            print("\t" + str(round(h.t)) + "ms of " + str(self.__tstop) + "ms integrated...")
-
-    def _end_integration(self):
-        """ Print the total simulation time.
-
-        This function, executed at the end of time integration is ment to be modified
-        by daughter calsses according to specific needs.
-        """
-        self.simulationTime = time.time() - self._start
-        print("tot simulation time: " + str(int(self.simulationTime)) + "s")
-
     def run(self):
         """ Run the simulation. """
-        self.__check_parameters()
-        self._initialize()
-        while h.t < self.__tstop:
-            self._integrate()
-            self._update()
-            self._print_sim_status()
-        self._end_integration()
+        # Set integration parameters
+        self.cvode = h.CVode()
+        self.cvode.active(0)
+        print(f'fixed time step integration (dt = {h.dt} ms)')
+
+        self._start = time.time()
+
+        # Initialize
+        h.finitialize(-80)
+        if self._amplitude:
+            self.cvode.event(self._stimStartTime, self.toggleStim)
+
+        # Integrate
+        while h.t < self._tstop:
+            h.fadvance()
+
+        self.simulationTime = time.time() - self._start
+        print("tot simulation time: " + str(int(self.simulationTime)) + "s")
 
     def set_results_folder(self, resultsFolderPath):
         """ Set a new folder in which to save the results """

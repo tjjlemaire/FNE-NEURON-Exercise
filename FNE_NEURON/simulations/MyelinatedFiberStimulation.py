@@ -1,4 +1,12 @@
+# -*- coding: utf-8 -*-
+# @Author: Theo Lemaire
+# @Email: theo.lemaire@epfl.ch
+# @Date:   2019-06-05 14:08:31
+# @Last Modified by:   Theo Lemaire
+# @Last Modified time: 2021-02-12 17:26:12
+
 from neuron import h
+
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,23 +20,18 @@ class MyelinatedFiberStimulation(Simulation):
     on myelinated fibers. """
 
     def __init__(self, diameter, amplitude, frequency, tstop=100, pulseWidth=0.1):
-        """ Object initialization.
-
-        """
-
-        Simulation.__init__(self)
-
-        h.dt = 0.025
-        self._diameter = diameter
+        """ Object initialization. """
+        super().__init__(tstop)
 
         # Create the fiber
+        self._diameter = diameter
         self.fiber = MyelinatedFiber(self._diameter)
         self.fibersPosition = 100  # in um
 
         # stimulation parameters
-        self._stimStartTime = 5
+        self._stimStartTime = 1
         self._amplitude = amplitude
-        self._electrodeOffset = self.fiber.nodeToNodeDistance * 50.  # centered to the fiber
+        self._electrodeOffset = 0.  # centered to the fiber
         self._pulseWidth = pulseWidth  # in ms
         if frequency == 0:
             self._frequency = 0.001
@@ -37,63 +40,58 @@ class MyelinatedFiberStimulation(Simulation):
         self._stimulationInterval = 1000. / self._frequency  # in ms
 
         self._stim = False
-        self._stimParameters = []
-        self._set_field(0)
-
-        # Iclam stimulation
         self._iclampStim = False
-
-        # Initialize lists for netStim
         self._secondaryStimObjects = []
         self._syn = []
         self._netcons = []
 
-        self._set_tstop(tstop)
-        # To plot the results with a high resolution we use an integration step equal to the Neuron dt
-        self._set_integration_step(h.dt)
+    def Vext(self, r, I):
+        return I / (4 * np.pi * r * 2.) * 1e-3
 
-        self._set_print_period(5)
+    def toggleStim(self):
+        ''' Toggle stim state (ON -> OFF or OFF -> ON) and set appropriate next toggle event. '''
+        # OFF -> ON at pulse onset
+        if not self._stim:
+            self._stim = self.setStimON(True)
+            self.cvode.event(h.t + self._pulseWidth, self.toggleStim)
+        # ON -> OFF at pulse offset
+        else:
+            self._stim = self.setStimON(False)
+            self.cvode.event(h.t + self._stimulationInterval - self._pulseWidth, self.toggleStim)
 
-        # Initialize a 2d numpy array to hold the membrane potentials of the whole fiber over time
-        self._membranPot = np.nan * np.zeros((
-            self.fiber.nNodes,
-            int(np.ceil(self._get_tstop() / self._get_integration_step() + 1))
-        ))
-        self._count = 0
+        # Re-initialize cvode if active, otherwise update currents
+        if self.cvode.active():
+            self.cvode.re_init()
+        else:
+            h.fcurrent()
 
-    """
-    Redefinition of inherited methods
-    """
+    def setStimON(self, value):
+        print(f't = {h.t:.2f} ms: turning stimulation {"ON" if value else "OFF"}')
+        self._set_field(self._amplitude * int(value))
+        return value
 
-    def foo(self, x1, x2):
-        return x2 / (4 * np.pi * x1 * 2.) * 1e-3
-
-    def _update(self):
-        """ Record membrane potential and update simulation parameters. """
-        # Record membrane potential
-        for j in range(self.fiber.nNodes):
-            self._membranPot[j, self._count] = self.fiber.node[j](0.5).v
-        self._count += 1
-
-        # extracellular stimulation
-        if self._amplitude:
-            if h.t > self._stimStartTime and h.t % self._stimulationInterval < self._pulseWidth and not self._stim:
-                self._set_field(self._amplitude)
-                self._stim = True
-            elif h.t % self._stimulationInterval >= self._pulseWidth and self._stim:
-                self._set_field(0)
-                self._stim = False
-
+    def run(self):
+        tprobe = h.Vector().record(h._ref_t)
+        vprobes = [h.Vector().record(self.fiber.node[j](0.5)._ref_v)
+                   for j in range(self.fiber.nNodes)]
+        self.ext_stim_vec = []
+        self._set_field(0)
+        super().run()
+        self.ext_stim_vec.append([h.t, 0.])
+        self.ext_stim_vec = np.array(self.ext_stim_vec)
+        self.tvec = np.array(tprobe.to_python())
+        self._membranPot = np.array([v.to_python() for v in vprobes])
 
     def save_results(self, name=""):
         pass
 
     def plot(self, name="", block=True):
         """ Plot the simulation results. """
+        print('rendering...')
         fig, ax = plt.subplots(2, figsize=(10, 7), sharex=True)
 
         """ Plot membrane potential in all the nodes as an image"""
-        im = ax[0].imshow(self._membranPot, interpolation='nearest', origin='lower', aspect='auto')
+        im = ax[0].pcolormesh(self.tvec, np.arange(self.fiber.nNodes), self._membranPot)
 
         fig.subplots_adjust(right=0.8)
         cbax = fig.add_axes([0.85, 0.6, 0.02, 0.3])
@@ -115,7 +113,7 @@ class MyelinatedFiberStimulation(Simulation):
         """ Plot membrane potential in the selected nodes"""
         nodes = [0, self.fiber.nNodes / 2, self.fiber.nNodes - 1]
         for node in nodes:
-            ax[1].plot(self._membranPot[int(node), :], label="node: %d" % (node + 1))
+            ax[1].plot(self.tvec, self._membranPot[int(node), :], label="node: %d" % (node + 1))
 
         ax[1].legend(loc=9, bbox_to_anchor=(0.95, 0.9))
 
@@ -131,20 +129,19 @@ class MyelinatedFiberStimulation(Simulation):
 
         ax[1].set_ylabel('membrane potential at \n%s (mV)' % (str(nodes)))
 
-        ax[1].set_xticks(np.arange(0, self._get_tstop() / self._get_integration_step(),
-                                   5. / self._get_integration_step()))
-        ax[1].set_xticklabels(np.arange(0, self._get_tstop(), 5))
-        ax[1].set_xlim([0, self._get_tstop() / self._get_integration_step()])
+        ax[1].set_xlim([0, self._tstop])
 
         ax[1].set_xlabel('Time (ms)')
 
         """ Plot stimulation """
         if self._amplitude:
+            tvec, Ivec = self.ext_stim_vec.T
+
             fig.subplots_adjust(bottom=0.3)
             pos = ax[1].get_position()
             stimAx = fig.add_axes([pos.x0, 0.1, pos.width, 0.1])
 
-            stimAx.plot(self._stimParameters[:, 0], self._stimParameters[:, 1], color='#00ADEE')
+            stimAx.plot(tvec, Ivec, color='#00ADEE')
 
             # Move left and bottom spines outward by 5 points
             stimAx.spines['left'].set_position(('outward', 5))
@@ -157,13 +154,10 @@ class MyelinatedFiberStimulation(Simulation):
             # Only show ticks on the left and bottom spines
             stimAx.yaxis.set_ticks_position('left')
             stimAx.xaxis.set_ticks_position('bottom')
-
-            stimAx.set_xticks(np.arange(0, self._get_tstop(), 5))
-            stimAx.set_xticklabels(np.arange(0, self._get_tstop(), 5))
-            stimAx.set_xlim([0, self._stimParameters[-1, 0]])
-
+            stimAx.set_xlim(0, tvec[-1])
             stimAx.set_ylabel('(uA)')
             stimAx.set_xlabel('Time (ms)')
+            stimAx.get_shared_x_axes().join(stimAx, ax[1])
 
         elif self._iclampStim:
             fig.subplots_adjust(bottom=0.3)
@@ -184,45 +178,27 @@ class MyelinatedFiberStimulation(Simulation):
             stimAx.yaxis.set_ticks_position('left')
             stimAx.xaxis.set_ticks_position('bottom')
 
-            stimAx.set_xticks(np.arange(0, self._get_tstop(), 5))
-            stimAx.set_xticklabels(np.arange(0, self._get_tstop(), 5))
-            stimAx.set_xlim([0, self._get_tstop()])
+            # stimAx.set_xticks(np.arange(0, self._get_tstop(), 5))
+            # stimAx.set_xticklabels(np.arange(0, self._get_tstop(), 5))
+            stimAx.set_xlim([0, self._tstop])
 
             stimAx.set_ylabel('(nA)')
             stimAx.set_xlabel('Time (ms)')
+
+            stimAx.get_shared_x_axes().join(stimAx, ax[1])
 
         fileName = time.strftime("%Y_%m_%d_neuron_exercise_" + name + ".pdf")
         plt.savefig(self._resultsFolder + fileName, format="pdf", transparent=True)
 
         plt.show(block=block)
 
-    def _end_integration(self):
-        Simulation._end_integration(self)
-        if self._amplitude:
-            self._stimParameters.append([self._stimParameters[-1][0], 0])
-            self._stimParameters.append([self._get_tstop(), 0])
-            self._stimParameters = np.array(self._stimParameters)
-
-    """
-    Specific Methods of this class
-    """
-
     def _set_field(self, amplitude):
-        plotFleg = False
-        field = []
-        x = []
         for segment in self.fiber.segments:
             distance = np.sqrt(((segment[1] - self._electrodeOffset) / 1000000.)**2 + (self.fibersPosition / 1000000.)**2)
-            segment[0].e_extracellular = self.foo(distance, amplitude)
-            if segment[2] == 'node':
-                field.append(segment[0].e_extracellular)
-                x.append((segment[1]))
-        if amplitude is not 0 and plotFleg:
-            plt.plot(x, field)
-            plt.show()
-        if self._stimParameters:
-            self._stimParameters.append([h.t - self._get_integration_step(), self._stimParameters[-1][1]])
-        self._stimParameters.append([h.t, amplitude])
+            segment[0].e_extracellular = self.Vext(distance, amplitude)
+        if self.ext_stim_vec:
+            self.ext_stim_vec.append([h.t, self.ext_stim_vec[-1][1]])
+        self.ext_stim_vec.append([h.t, amplitude])
 
     def attach_current_clamp(self, segment, amp=0.1, delay=1, dur=1):
         """ Attach a current Clamp to a segment.
@@ -240,7 +216,7 @@ class MyelinatedFiberStimulation(Simulation):
         self._secondaryStimObjects[-1].amp = amp
         self._iclampStim = True
         self._iclampStim = [
-            [0, delay, delay, delay + dur, delay + dur, self._get_tstop()],
+            [0, delay, delay, delay + dur, delay + dur, self._tstop],
             [0, 0, amp, amp, 0, 0]
         ]
 

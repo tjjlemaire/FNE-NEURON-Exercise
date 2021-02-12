@@ -1,5 +1,11 @@
-import sys
+# -*- coding: utf-8 -*-
+# @Author: Theo Lemaire
+# @Email: theo.lemaire@epfl.ch
+# @Date:   2019-06-05 14:08:31
+# @Last Modified by:   Theo Lemaire
+# @Last Modified time: 2021-02-12 17:27:48
 
+import sys
 from FNE_NEURON.simulations import MyelinatedFiberStimulation
 
 
@@ -11,31 +17,32 @@ def main():
 
     if len(sys.argv) < 2:
         print("Error in arguments. Required arguments:")
+        print("\t Fiber diameter (um)")
+        print("\t Pulse width (ms)")
         print("\t Simulation amplitude (nA)")
         print("Optional arguments:")
         print("\t Output name")
         sys.exit(-1)
 
-    stimulatioAmplitude = float(sys.argv[1])  # mA
+    fiberD = float(sys.argv[1])  # um
+    pulse_width = float(sys.argv[2])  # ms
+    stim_amp = float(sys.argv[3])  # nA
+
     if len(sys.argv) > 2:
         name = sys.argv[2]
     else:
         name = "part3"
 
-    fiberDiameter = 20  # um
-    pulseWidth = 0.1  # ms
-    tstop = 30  # ms
-    startStim = 16.7
+    tstop = 15  # ms
 
     print("\nSimulation parameters:")
-    print("\tFiber diameter: %f um" % (fiberDiameter))
-    print("\tStimulation amplitude: %f nA" % (stimulatioAmplitude))
+    print("\tFiber diameter: %f um" % (fiberD))
+    print("\tStimulation amplitude: %f nA" % (stim_amp))
 
-    simulation = MyelinatedFiberStimulation(fiberDiameter, 0, 0, tstop, 0)
-
-    stimulatedSegment = simulation.fiber.node[50]
-    simulation.attach_current_clamp(stimulatedSegment, stimulatioAmplitude, startStim, pulseWidth)
-
+    simulation = MyelinatedFiberStimulation(fiberD, 0, 0, tstop, 0)
+    stimulatedSegment = simulation.fiber.node[simulation.fiber.nNodes // 2]
+    simulation.attach_current_clamp(
+        stimulatedSegment, stim_amp, simulation._stimStartTime, pulse_width)
     simulation.run()
     simulation.plot(name)
 
